@@ -222,15 +222,16 @@ textarea{min-height:110px;resize:vertical}
       <div class="panel-head"><div><div class="section-kicker">HERRAMIENTA 01</div><h2>🔎 Buscador IA</h2><p>Entra a cualquiera de las herramientas creativas de MARY desde este mismo espacio.</p></div><button class="close-panel" onclick="cerrarPanel()">✕ Cerrar</button></div>
 
       <div class="subtool-grid">
-        <button class="subtool-card" onclick="mostrarBusquedaImagenes()"><span>🖼️</span><strong>Buscar imágenes</strong><small>Encuentra imágenes y revisa sus fuentes y licencias.</small></button>
-        <button class="subtool-card" onclick="elegirTipo('Prompt para imagen')"><span>🎨</span><strong>Crear imágenes</strong><small>Prepara prompts detallados para imágenes de cualquier tema.</small></button>
-        <button class="subtool-card" onclick="elegirTipo('Guion de video con audio')"><span>🎬♫</span><strong>Video con audio</strong><small>Guion, escenas, narración, música y subtítulos sugeridos.</small></button>
-        <button class="subtool-card" onclick="elegirTipo('Crear prompts')"><span>✨</span><strong>Crear prompts</strong><small>Escribe y mejora instrucciones para herramientas de IA.</small></button>
-        <button class="subtool-card" onclick="elegirTipo('Reflexión motivacional')"><span>💡</span><strong>Reflexiones</strong><small>Mensajes de motivación, superación y fe.</small></button>
-        <button class="subtool-card" onclick="elegirTipo('Podcast')"><span>🎙️</span><strong>Podcasts</strong><small>Guiones con introducción, desarrollo y cierre.</small></button>
-        <button class="subtool-card" onclick="elegirTipo('Historia o frutinovela')"><span>🎭</span><strong>Historias y frutinovelas</strong><small>Personajes, escenas, drama y giros sorprendentes.</small></button>
-        <button class="subtool-card" onclick="elegirTipo('Guion para TikTok y Facebook')"><span>📱</span><strong>Guiones para redes</strong><small>Ganchos y guiones para TikTok y Facebook.</small></button>
-        <button class="subtool-card" onclick="elegirTipo('Buscador IA')"><span>💬</span><strong>Preguntar a MARY</strong><small>Haz preguntas y recibe respuestas en español.</small></button>
+    <button class="subtool-card" onclick="elegirTipo('Buscador IA')">
+        <span>✨</span>
+        <strong>Asistente de MARY</strong>
+        <small>Escribe lo que necesitas y MARY te ayudará.</small>
+    </button>
+</div>
+    <span>✨</span>
+    <strong>Asistente de MARY</strong>
+    <small>Escribe lo que necesitas y MARY te ayudará.</small>
+</button>><span>🖼️</span><strong>Buscar imágenes</strong><small>Encuentra imágenes y revisa sus fuentes y licencias.</small></button>
       </div>
 
       <div class="panel-grid nested-workspace">
@@ -273,9 +274,6 @@ textarea{min-height:110px;resize:vertical}
   </section>
 
 
-  <section class="library" id="biblioteca">
-    <div class="section-kicker">TU TRABAJO</div><h2>▤ Mis creaciones recientes</h2><div id="lista-creaciones"><p class="empty">Todavía no tienes creaciones guardadas.</p></div>
-  </section>
 </main>
 <footer class="site-footer" id="ayuda">MARY · Tu espacio creativo con inteligencia artificial</footer>
 
@@ -455,7 +453,7 @@ async function buscarImagenes(){
 }
 function agregarBotonCopiar(contenedor,texto){const b=document.createElement('button');b.className='secondary-button';b.textContent='Copiar resultado';b.onclick=()=>copiarTexto(texto);contenedor.appendChild(b)}
 function cargarBiblioteca(){
- const lista=document.getElementById('lista-creaciones');let guardados=[];
+ const lista=document.getElementById('lista-creaciones');if(!lista)return;let guardados=[];
  try{guardados=JSON.parse(localStorage.getItem('mary_creaciones')||localStorage.getItem('creadorIA')||'[]')}catch{guardados=[]}
  if(!guardados.length){lista.innerHTML='<p class="empty">Todavía no tienes creaciones guardadas.</p>';return}
  lista.innerHTML='';guardados.forEach((item,indice)=>{
@@ -480,6 +478,7 @@ app.MapPost("/clips/subir", async (HttpRequest request, IWebHostEnvironment envi
 {
     const long maxBytes = 250L * 1024L * 1024L;
     string? localInputPath = null;
+    string? sourceDownloadDirectory = null;
     string? workDirectory = null;
     string? persistentOutputDirectory = null;
     bool keepClipFiles = false;
@@ -522,31 +521,47 @@ app.MapPost("/clips/subir", async (HttpRequest request, IWebHostEnvironment envi
         else if (isRemote)
         {
             string rawUrl = form["url"].ToString().Trim();
-            string? validationError = await ValidateRemoteMediaUrlAsync(rawUrl, "directo");
-            if (validationError is not null)
-                return Results.BadRequest(new { error = validationError });
 
-            var mediaUri = new Uri(rawUrl);
-            extension = Path.GetExtension(mediaUri.AbsolutePath).ToLowerInvariant();
-            if (automaticSelection)
+            if (IsSupportedPlatformVideoUrl(rawUrl))
             {
-                if (extension == ".m3u8")
-                    return Results.BadRequest(new { error = "El análisis automático de momentos necesita un archivo MP4, MOV, WEBM, MKV o AVI. Para una lista HLS .m3u8 usa primero el modo manual o sube una grabación autorizada." });
-                string remoteWork = Path.Combine(Path.GetTempPath(), "mary-video-work");
-                Directory.CreateDirectory(remoteWork);
-                localInputPath = Path.Combine(remoteWork, Guid.NewGuid().ToString("N") + (string.IsNullOrWhiteSpace(extension) ? ".mp4" : extension));
-                string? downloadError = await DownloadDirectVideoAsync(mediaUri.AbsoluteUri, localInputPath, maxBytes);
-                if (downloadError is not null)
-                    return Results.BadRequest(new { error = downloadError });
+                sourceDownloadDirectory = Path.Combine(Path.GetTempPath(), "mary-video-work", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(sourceDownloadDirectory);
+                var platformDownload = await DownloadPlatformVideoAsync(rawUrl, sourceDownloadDirectory, maxBytes);
+                if (platformDownload.Error is not null)
+                    return Results.BadRequest(new { error = platformDownload.Error });
+
+                localInputPath = platformDownload.Path!;
+                extension = Path.GetExtension(localInputPath).ToLowerInvariant();
                 ffmpegInput = localInputPath;
                 isRemote = false;
             }
             else
             {
-                ffmpegInput = mediaUri.AbsoluteUri;
+                string? validationError = await ValidateRemoteMediaUrlAsync(rawUrl, "directo");
+                if (validationError is not null)
+                    return Results.BadRequest(new { error = validationError });
+
+                var mediaUri = new Uri(rawUrl);
+                extension = Path.GetExtension(mediaUri.AbsolutePath).ToLowerInvariant();
+                if (automaticSelection)
+                {
+                    if (extension == ".m3u8")
+                        return Results.BadRequest(new { error = "El anÃ¡lisis automÃ¡tico necesita un archivo MP4, MOV, WEBM, MKV o AVI. Para HLS usa el modo manual o sube una grabaciÃ³n autorizada." });
+                    string remoteWork = Path.Combine(Path.GetTempPath(), "mary-video-work");
+                    Directory.CreateDirectory(remoteWork);
+                    localInputPath = Path.Combine(remoteWork, Guid.NewGuid().ToString("N") + (string.IsNullOrWhiteSpace(extension) ? ".mp4" : extension));
+                    string? downloadError = await DownloadDirectVideoAsync(mediaUri.AbsoluteUri, localInputPath, maxBytes);
+                    if (downloadError is not null)
+                        return Results.BadRequest(new { error = downloadError });
+                    ffmpegInput = localInputPath;
+                    isRemote = false;
+                }
+                else
+                {
+                    ffmpegInput = mediaUri.AbsoluteUri;
+                }
             }
-        }
-        else
+        }        else
         {
             return Results.BadRequest(new { error = "Selecciona subir un video o pegar un enlace directo." });
         }
@@ -577,11 +592,11 @@ app.MapPost("/clips/subir", async (HttpRequest request, IWebHostEnvironment envi
         {
             if (localInputPath is null || !File.Exists(localInputPath))
                 return Results.BadRequest(new { error = "Para buscar momentos automáticamente, MARY necesita poder leer el archivo de video. Sube el archivo o utiliza un enlace directo descargable." });
-            string? geminiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
-            if (string.IsNullOrWhiteSpace(geminiKey))
-                return Results.Problem(detail: "Falta configurar GEMINI_API_KEY para detectar momentos automáticamente.", statusCode: 500);
-            var analysis = await DetectHighlightMomentsAsync(localInputPath, extension, geminiKey, mediaDuration.Value, durationSeconds, requestedClips, style);
-            if (analysis.Error is not null)
+            string? groqKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
+            string? openRouterKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+            if (string.IsNullOrWhiteSpace(groqKey))
+                return Results.Problem(detail: "Falta configurar GROQ_API_KEY. Groq se utiliza para transcribir el audio del video.", statusCode: 500);
+            var analysis = await DetectHighlightMomentsAsync(localInputPath, groqKey, openRouterKey, mediaDuration.Value, durationSeconds, requestedClips, style);if (analysis.Error is not null)
                 return Results.Problem(detail: analysis.Error, statusCode: 502);
             selectedMoments = analysis.Moments;
             if (selectedMoments.Count == 0)
@@ -738,7 +753,10 @@ app.MapPost("/clips/subir", async (HttpRequest request, IWebHostEnvironment envi
         {
             try { File.Delete(localInputPath); } catch { }
         }
-        if (workDirectory is not null && Directory.Exists(workDirectory))
+        if (sourceDownloadDirectory is not null && Directory.Exists(sourceDownloadDirectory))
+        {
+            try { Directory.Delete(sourceDownloadDirectory, recursive: true); } catch { }
+        }        if (workDirectory is not null && Directory.Exists(workDirectory))
         {
             try { Directory.Delete(workDirectory, recursive: true); } catch { }
         }
@@ -865,6 +883,106 @@ static async Task<string?> DownloadDirectVideoAsync(string initialUrl, string de
     return "No se pudo acceder al enlace directo.";
 }
 
+static bool IsSupportedPlatformVideoUrl(string rawUrl)
+{
+    if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri)) return false;
+    if (uri.Scheme is not ("http" or "https") || uri.UserInfo.Length > 0 || !uri.IsDefaultPort) return false;
+
+    string host = uri.IdnHost.ToLowerInvariant();
+    static bool Matches(string hostName, string domain) =>
+        hostName.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
+        hostName.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
+
+    return Matches(host, "youtube.com") ||
+           Matches(host, "youtu.be") ||
+           Matches(host, "youtube-nocookie.com") ||
+           Matches(host, "tiktok.com") ||
+           Matches(host, "facebook.com") ||
+           Matches(host, "fb.watch");
+}
+
+static async Task<(string? Path, string? Error)> DownloadPlatformVideoAsync(string url, string destinationDirectory, long maxBytes)
+{
+    Directory.CreateDirectory(destinationDirectory);
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = "yt-dlp",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true
+    };
+
+    startInfo.ArgumentList.Add("--no-playlist");
+    startInfo.ArgumentList.Add("--no-progress");
+    startInfo.ArgumentList.Add("--no-warnings");
+    startInfo.ArgumentList.Add("--no-write-info-json");
+    startInfo.ArgumentList.Add("--no-write-thumbnail");
+    startInfo.ArgumentList.Add("--no-write-subs");
+    startInfo.ArgumentList.Add("--no-write-auto-subs");
+    startInfo.ArgumentList.Add("--max-filesize");
+    startInfo.ArgumentList.Add("250M");
+    startInfo.ArgumentList.Add("--format");
+    startInfo.ArgumentList.Add("bv*+ba/b");
+    startInfo.ArgumentList.Add("--merge-output-format");
+    startInfo.ArgumentList.Add("mp4");
+    startInfo.ArgumentList.Add("--remux-video");
+    startInfo.ArgumentList.Add("mp4");
+    startInfo.ArgumentList.Add("--output");
+    startInfo.ArgumentList.Add(Path.Combine(destinationDirectory, "mary-source.%(ext)s"));
+    startInfo.ArgumentList.Add(url);
+
+    using var process = new Process { StartInfo = startInfo };
+    try
+    {
+        if (!process.Start())
+            return (null, "MARY no pudo iniciar yt-dlp. Comprueba que estÃ© instalado y disponible en PATH.");
+
+        Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> errorTask = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(8));
+        await process.WaitForExitAsync(timeout.Token);
+        _ = await outputTask;
+        string error = await errorTask;
+
+        if (process.ExitCode != 0)
+        {
+            Console.WriteLine("yt-dlp: " + error);
+            return (null, "No se pudo obtener el video. Comprueba que sea pÃºblico, que el enlace sea correcto y que la plataforma permita acceder a Ã©l.");
+        }
+
+        string? downloaded = Directory.GetFiles(destinationDirectory, "mary-source.*")
+            .Where(path => !path.EndsWith(".part", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+
+        if (downloaded is null || !File.Exists(downloaded))
+            return (null, "yt-dlp terminÃ³, pero no se encontrÃ³ el archivo de video descargado.");
+
+        var info = new FileInfo(downloaded);
+        if (info.Length <= 0)
+            return (null, "La plataforma devolviÃ³ un archivo de video vacÃ­o.");
+        if (info.Length > maxBytes)
+            return (null, "El video supera el lÃ­mite de 250 MB permitido por MARY.");
+
+        string extension = Path.GetExtension(downloaded).ToLowerInvariant();
+        if (extension is not (".mp4" or ".mov" or ".m4v" or ".webm" or ".mkv" or ".avi"))
+            return (null, "La plataforma entregÃ³ un formato de video no compatible.");
+
+        return (downloaded, null);
+    }
+    catch (OperationCanceledException)
+    {
+        try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+        return (null, "La descarga tardÃ³ demasiado y MARY la cancelÃ³. IntÃ©ntalo con un video mÃ¡s corto.");
+    }
+    catch (Exception ex)
+    {
+        try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+        Console.WriteLine("Error de yt-dlp: " + ex.Message);
+        return (null, "MARY no pudo ejecutar yt-dlp. Verifica que estÃ© instalado y disponible en PATH.");
+    }
+}
 static async Task<string?> ValidatePublicHttpUriAsync(Uri uri)
 {
     if (uri.Scheme is not ("http" or "https") || uri.UserInfo.Length > 0)
@@ -887,158 +1005,269 @@ static async Task<string?> ValidatePublicHttpUriAsync(Uri uri)
 }
 
 static async Task<(List<ClipMoment> Moments, string? Error)> DetectHighlightMomentsAsync(
-    string videoPath, string extension, string apiKey, double videoDuration, int clipDuration, int desiredCount, string style)
+    string videoPath, string groqKey, string? openRouterKey, double videoDuration, int clipDuration, int desiredCount, string style)
 {
-    string mimeType = extension.ToLowerInvariant() switch
-    {
-        ".mov" => "video/quicktime",
-        ".webm" => "video/webm",
-        ".mkv" => "video/x-matroska",
-        ".avi" => "video/x-msvideo",
-        ".m4v" => "video/mp4",
-        _ => "video/mp4"
-    };
+    const int chunkSeconds = 600;
+    string audioDirectory = Path.Combine(Path.GetTempPath(), "mary-audio-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(audioDirectory);
 
-    string? uploadedFileName = null;
     try
     {
         var fileInfo = new FileInfo(videoPath);
         if (!fileInfo.Exists || fileInfo.Length == 0)
             return ([], "No se encontró el video para analizar.");
         if (fileInfo.Length > 250L * 1024L * 1024L)
-            return ([], "El video supera el límite de 250 MB para esta versión.");
+            return ([], "El video supera el límite de 250 MB para el análisis automático.");
 
-        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(12) };
-        string displayName = "MARY-highlight-" + Guid.NewGuid().ToString("N");
-        using var startRequest = new HttpRequestMessage(HttpMethod.Post, "https://generativelanguage.googleapis.com/upload/v1beta/files");
-        startRequest.Headers.Add("x-goog-api-key", apiKey);
-        startRequest.Headers.Add("X-Goog-Upload-Protocol", "resumable");
-        startRequest.Headers.Add("X-Goog-Upload-Command", "start");
-        startRequest.Headers.Add("X-Goog-Upload-Header-Content-Length", fileInfo.Length.ToString(CultureInfo.InvariantCulture));
-        startRequest.Headers.Add("X-Goog-Upload-Header-Content-Type", mimeType);
-        startRequest.Content = new StringContent(JsonSerializer.Serialize(new { file = new { display_name = displayName } }), Encoding.UTF8, "application/json");
-        using var startResponse = await client.SendAsync(startRequest);
-        string startBody = await startResponse.Content.ReadAsStringAsync();
-        if (!startResponse.IsSuccessStatusCode)
-            return ([], "Gemini no pudo iniciar la carga del video: " + ExtractGeminiError(startBody, (int)startResponse.StatusCode));
-        if (!startResponse.Headers.TryGetValues("X-Goog-Upload-URL", out var uploadUrls))
-            return ([], "Gemini no devolvió la dirección segura para subir el video.");
-        string uploadUrl = uploadUrls.FirstOrDefault() ?? "";
-        if (string.IsNullOrWhiteSpace(uploadUrl)) return ([], "Gemini devolvió una dirección de carga vacía.");
-
-        using var uploadRequest = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
-        uploadRequest.Headers.Add("X-Goog-Upload-Offset", "0");
-        uploadRequest.Headers.Add("X-Goog-Upload-Command", "upload, finalize");
-        var videoStream = File.OpenRead(videoPath);
-        uploadRequest.Content = new StreamContent(videoStream);
-        uploadRequest.Content.Headers.ContentLength = fileInfo.Length;
-        uploadRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
-        using var uploadResponse = await client.SendAsync(uploadRequest);
-        string uploadBody = await uploadResponse.Content.ReadAsStringAsync();
-        if (!uploadResponse.IsSuccessStatusCode)
-            return ([], "Gemini no pudo recibir el video: " + ExtractGeminiError(uploadBody, (int)uploadResponse.StatusCode));
-
-        using var uploadJson = JsonDocument.Parse(uploadBody);
-        if (!uploadJson.RootElement.TryGetProperty("file", out var uploadedFile) ||
-            !uploadedFile.TryGetProperty("uri", out var uriElement) ||
-            !uploadedFile.TryGetProperty("name", out var nameElement))
-            return ([], "Gemini recibió el archivo, pero no devolvió los datos necesarios para analizarlo.");
-        string fileUri = uriElement.GetString() ?? "";
-        uploadedFileName = nameElement.GetString();
-        if (string.IsNullOrWhiteSpace(fileUri) || string.IsNullOrWhiteSpace(uploadedFileName))
-            return ([], "Gemini devolvió una referencia de video incompleta.");
-
-        string state = "PROCESSING";
-        for (int attempt = 0; attempt < 90; attempt++)
+        // Divide el audio en bloques de 10 minutos, mono y comprimidos.
+        // Así cada archivo queda muy por debajo del límite de carga de Groq.
+        string audioPattern = Path.Combine(audioDirectory, "audio-%03d.mp3");
+        var ffmpegStart = new ProcessStartInfo
         {
-            using var statusRequest = new HttpRequestMessage(HttpMethod.Get, "https://generativelanguage.googleapis.com/v1beta/" + uploadedFileName);
-            statusRequest.Headers.Add("x-goog-api-key", apiKey);
-            using var statusResponse = await client.SendAsync(statusRequest);
-            string statusBody = await statusResponse.Content.ReadAsStringAsync();
-            if (!statusResponse.IsSuccessStatusCode)
-                return ([], "No se pudo comprobar el procesamiento del video en Gemini: " + ExtractGeminiError(statusBody, (int)statusResponse.StatusCode));
-            using var statusJson = JsonDocument.Parse(statusBody);
-            if (statusJson.RootElement.TryGetProperty("state", out var stateElement))
-                state = stateElement.ValueKind == JsonValueKind.Object && stateElement.TryGetProperty("name", out var stateName)
-                    ? stateName.GetString() ?? "PROCESSING"
-                    : stateElement.GetString() ?? "PROCESSING";
-            if (state.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase)) break;
-            if (state.Equals("FAILED", StringComparison.OrdinalIgnoreCase)) return ([], "Gemini no pudo procesar el archivo de video. Prueba con MP4 o MOV.");
-            await Task.Delay(TimeSpan.FromSeconds(2));
+            FileName = "ffmpeg",
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (string argument in new[]
+        {
+            "-hide_banner", "-loglevel", "error", "-y",
+            "-i", videoPath, "-vn", "-ac", "1", "-ar", "16000",
+            "-b:a", "32k", "-f", "segment", "-segment_time",
+            chunkSeconds.ToString(CultureInfo.InvariantCulture),
+            "-reset_timestamps", "1", audioPattern
+        })
+            ffmpegStart.ArgumentList.Add(argument);
+
+        using (var ffmpeg = new Process { StartInfo = ffmpegStart })
+        {
+            if (!ffmpeg.Start())
+                return ([], "No se pudo iniciar FFmpeg para extraer el audio.");
+            Task<string> ffmpegErrorTask = ffmpeg.StandardError.ReadToEndAsync();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(8));
+            await ffmpeg.WaitForExitAsync(timeout.Token);
+            string ffmpegError = await ffmpegErrorTask;
+            if (ffmpeg.ExitCode != 0)
+                return ([], "FFmpeg no pudo extraer el audio. Comprueba que el video tenga una pista de sonido. " + ffmpegError);
         }
-        if (!state.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase))
-            return ([], "Gemini tardó demasiado en preparar el video. Prueba con un archivo más corto.");
+
+        string[] audioFiles = Directory.GetFiles(audioDirectory, "audio-*.mp3")
+            .OrderBy(path => Path.GetFileName(path), StringComparer.Ordinal)
+            .ToArray();
+        if (audioFiles.Length == 0)
+            return ([], "No se encontró una pista de audio en el video.");
+
+        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        var transcript = new StringBuilder();
+
+        // Transcribir cada bloque con marcas de tiempo y reconstruir el tiempo del video original.
+        for (int chunkIndex = 0; chunkIndex < audioFiles.Length; chunkIndex++)
+        {
+            string audioPath = audioFiles[chunkIndex];
+            using var multipart = new MultipartFormDataContent();
+            multipart.Add(new StringContent("whisper-large-v3-turbo"), "model");
+            multipart.Add(new StringContent("verbose_json"), "response_format");
+            multipart.Add(new StringContent("es"), "language");
+            multipart.Add(new StringContent("segment"), "timestamp_granularities[]");
+
+            var audioStream = File.OpenRead(audioPath);
+            var audioContent = new StreamContent(audioStream);
+            audioContent.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue("audio/mpeg");
+            multipart.Add(audioContent, "file", Path.GetFileName(audioPath));
+
+            using var transcriptionRequest = new HttpRequestMessage(
+                HttpMethod.Post, "https://api.groq.com/openai/v1/audio/transcriptions");
+            transcriptionRequest.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", groqKey);
+            transcriptionRequest.Content = multipart;
+
+            using var transcriptionResponse = await client.SendAsync(transcriptionRequest);
+            string transcriptionBody = await transcriptionResponse.Content.ReadAsStringAsync();
+            if (!transcriptionResponse.IsSuccessStatusCode)
+                return ([], $"Groq no pudo transcribir el bloque {chunkIndex + 1} (HTTP {(int)transcriptionResponse.StatusCode}): {transcriptionBody}");
+
+            using var transcriptionJson = JsonDocument.Parse(transcriptionBody);
+            if (!transcriptionJson.RootElement.TryGetProperty("segments", out var segments) ||
+                segments.ValueKind != JsonValueKind.Array)
+                return ([], "Groq recibió el audio, pero no devolvió marcas de tiempo. Inténtalo de nuevo.");
+
+            double offset = chunkIndex * chunkSeconds;
+            foreach (var segment in segments.EnumerateArray())
+            {
+                if (!segment.TryGetProperty("start", out var startElement) ||
+                    !segment.TryGetProperty("end", out var endElement) ||
+                    !startElement.TryGetDouble(out double localStart) ||
+                    !endElement.TryGetDouble(out double localEnd))
+                    continue;
+
+                string spokenText = segment.TryGetProperty("text", out var textElement)
+                    ? textElement.GetString() ?? ""
+                    : "";
+                if (string.IsNullOrWhiteSpace(spokenText)) continue;
+
+                double absoluteStart = offset + localStart;
+                double absoluteEnd = offset + localEnd;
+                transcript.Append('[')
+                    .Append(absoluteStart.ToString("0.0", CultureInfo.InvariantCulture))
+                    .Append('-')
+                    .Append(absoluteEnd.ToString("0.0", CultureInfo.InvariantCulture))
+                    .Append("] ")
+                    .AppendLine(spokenText.Trim());
+            }
+        }
+
+        string transcriptText = transcript.ToString();
+        if (string.IsNullOrWhiteSpace(transcriptText))
+            return ([], "Groq no detectó palabras claras en el audio. Puedes probar el modo manual.");
+
+        // Evitar enviar un texto excesivamente largo al modelo de selección.
+        if (transcriptText.Length > 60000)
+            transcriptText = transcriptText[..60000];
 
         string styleInstruction = style switch
         {
-            "gracioso" => "Prioriza bromas, chistes, carcajadas, remates cómicos, gestos divertidos y reacciones que provoquen risa.",
-            "emocionante" => "Prioriza momentos emotivos, inspiradores, tensos o emocionantes, reacciones auténticas y frases memorables.",
-            "sorpresa" => "Prioriza giros inesperados, revelaciones, sorpresas, cambios repentinos y reacciones espontáneas.",
-            _ => "Busca una mezcla de humor, emoción, sorpresa, energía, reacciones auténticas y momentos memorables."
+            "gracioso" => "Prioriza bromas, chistes, carcajadas descritas en el diálogo, remates cómicos y conversaciones divertidas.",
+            "emocionante" => "Prioriza frases emotivas, inspiradoras, tensas o emocionantes y conversaciones memorables.",
+            "sorpresa" => "Prioriza revelaciones, giros inesperados expresados en palabras y reacciones que se perciban en el diálogo.",
+            _ => "Busca una mezcla de humor, emoción, sorpresa, energía y frases memorables."
         };
-        string prompt = $"Analiza el video completo y encuentra hasta {desiredCount} momentos destacados, cada uno con una duración EXACTA de {clipDuration} segundos. " +
-            styleInstruction + " " +
-            "Elige fragmentos autónomos que enganchen desde los primeros segundos y tengan una recompensa clara: risa, remate, reacción, emoción, sorpresa o acción. " +
-            "Evita silencios, esperas, introducciones largas, repeticiones, pausas y fragmentos que no se entiendan fuera de contexto. " +
-            "No inventes sucesos ni atribuyas emociones que no sean visibles o audibles. No superpongas los momentos. " +
-            $"El video dura {videoDuration.ToString("0.0", CultureInfo.InvariantCulture)} segundos. " +
-            "Devuelve SOLO JSON válido, sin Markdown ni explicaciones, con esta estructura exacta: " +
-            "{\"momentos\":[{\"inicio\":12.5,\"fin\":42.5,\"categoria\":\"gracioso\",\"motivo\":\"Explicación breve de por qué este momento funciona\",\"potencial\":88}]} . " +
-            "inicio y fin deben ser segundos numéricos del video original; fin-inicio debe ser igual a la duración solicitada. " +
-            "potencial es una valoración orientativa de retención de 1 a 100, NO una predicción de viralidad. " +
-            "Incluye hasta la cantidad solicitada; si no hay suficientes momentos buenos, devuelve menos en vez de inventarlos.";
 
-        var requestBody = new
+        string prompt = $$"""
+Eres MARY, especialista en seleccionar fragmentos atractivos para videos cortos.
+Analiza esta transcripción en español, que incluye los segundos del video original.
+Selecciona hasta {{desiredCount}} momentos, cada uno de exactamente {{clipDuration}} segundos.
+{{styleInstruction}}
+Elige fragmentos que enganchen rápido y tengan una recompensa clara: una broma, un remate, una frase fuerte, una conversación interesante o una revelación.
+Evita silencios, esperas, introducciones largas, repeticiones y fragmentos que no se entiendan fuera de contexto.
+No inventes diálogos, sucesos ni marcas de tiempo. Basa cada selección en las marcas de tiempo de la transcripción.
+El video dura {{videoDuration.ToString("0.0", CultureInfo.InvariantCulture)}} segundos.
+Devuelve SOLO JSON válido, sin Markdown ni explicaciones, con esta estructura:
+{"momentos":[{"inicio":12.5,"fin":{{clipDuration}},"categoria":"gracioso","motivo":"Explicación breve basada en lo que se dice","potencial":88}]}
+"inicio" y "fin" son segundos del video original; "fin" debe ser igual a "inicio" más {{clipDuration}}.
+"potencial" es una valoración orientativa de 1 a 100, no una predicción de viralidad.
+No superpongas los momentos. Si no hay suficientes momentos buenos, devuelve menos en vez de inventarlos.
+
+TRANSCRIPCIÓN:
+{{transcriptText}}
+""";
+
+        async Task<(string? Text, string Error)> AskModelAsync(string url, string key, string model)
         {
-            contents = new[] { new { parts = new object[] {
-                new { file_data = new { file_uri = fileUri, mime_type = mimeType }, media_processing = "AGENTIC" },
-                new { text = prompt }
-            } } },
-            generationConfig = new { responseMimeType = "application/json", temperature = 0.2 }
-        };
-        using var analyzeRequest = new HttpRequestMessage(HttpMethod.Post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent");
-        analyzeRequest.Headers.Add("x-goog-api-key", apiKey);
-        analyzeRequest.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-        using var analyzeResponse = await client.SendAsync(analyzeRequest);
-        string analyzeBody = await analyzeResponse.Content.ReadAsStringAsync();
-        if (!analyzeResponse.IsSuccessStatusCode)
-            return ([], "Gemini no pudo analizar los momentos: " + ExtractGeminiError(analyzeBody, (int)analyzeResponse.StatusCode));
+            try
+            {
+                var requestBody = new
+                {
+                    model,
+                    messages = new[]
+                    {
+                        new { role = "system", content = "Eres MARY. Responde únicamente con el JSON solicitado y no inventes marcas de tiempo." },
+                        new { role = "user", content = prompt }
+                    },
+                    temperature = 0.2
+                };
 
-        using var answerJson = JsonDocument.Parse(analyzeBody);
-        if (!answerJson.RootElement.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
-            return ([], "Gemini no devolvió momentos destacados. Prueba con otro video o con el modo manual.");
-        var textBuilder = new StringBuilder();
-        foreach (var part in candidates[0].GetProperty("content").GetProperty("parts").EnumerateArray())
-            if (part.TryGetProperty("text", out var textPart)) textBuilder.Append(textPart.GetString());
-        string jsonText = textBuilder.ToString().Trim();
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
+                request.Content = new StringContent(
+                    JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+
+                using var response = await client.SendAsync(request);
+                string body = await response.Content.ReadAsStringAsync();
+                if (!response.IsSuccessStatusCode)
+                    return (null, $"HTTP {(int)response.StatusCode}: {body}");
+
+                using var json = JsonDocument.Parse(body);
+                if (!json.RootElement.TryGetProperty("choices", out var choices) ||
+                    choices.GetArrayLength() == 0 ||
+                    !choices[0].TryGetProperty("message", out var message) ||
+                    !message.TryGetProperty("content", out var content))
+                    return (null, "El modelo no devolvió contenido válido.");
+
+                string? answer = content.ValueKind == JsonValueKind.String
+                    ? content.GetString()
+                    : content.ToString();
+                return !string.IsNullOrWhiteSpace(answer)
+                    ? (answer, "")
+                    : (null, "El modelo devolvió una respuesta vacía.");
+            }
+            catch (Exception ex)
+            {
+                return (null, ex.Message);
+            }
+        }
+
+        string? modelAnswer = null;
+        string providerError = "";
+
+        var groqAnalysis = await AskModelAsync(
+            "https://api.groq.com/openai/v1/chat/completions",
+            groqKey,
+            "openai/gpt-oss-20b");
+        modelAnswer = groqAnalysis.Text;
+        providerError = groqAnalysis.Error;
+
+        if (modelAnswer is null && !string.IsNullOrWhiteSpace(openRouterKey))
+        {
+            Console.WriteLine("MARY: Groq no pudo seleccionar los clips; intentando OpenRouter gratuito.");
+            var openRouterAnalysis = await AskModelAsync(
+                "https://openrouter.ai/api/v1/chat/completions",
+                openRouterKey,
+                "openrouter/free");
+            modelAnswer = openRouterAnalysis.Text;
+            if (modelAnswer is null)
+                providerError += " | OpenRouter: " + openRouterAnalysis.Error;
+        }
+
+        if (modelAnswer is null)
+            return ([], "No se pudieron seleccionar los momentos con Groq ni OpenRouter. " + providerError);
+
+        string jsonText = modelAnswer.Trim();
         int firstBrace = jsonText.IndexOf('{');
         int lastBrace = jsonText.LastIndexOf('}');
         if (firstBrace < 0 || lastBrace <= firstBrace)
-            return ([], "La respuesta de Gemini no tuvo el formato esperado. Vuelve a intentarlo o usa el modo manual.");
+            return ([], "La IA no devolvió el JSON de momentos esperado. Inténtalo de nuevo o usa el modo manual.");
+
         using var momentsJson = JsonDocument.Parse(jsonText.Substring(firstBrace, lastBrace - firstBrace + 1));
-        if (!momentsJson.RootElement.TryGetProperty("momentos", out var momentArray) || momentArray.ValueKind != JsonValueKind.Array)
-            return ([], "Gemini no devolvió una lista válida de momentos destacados.");
+        if (!momentsJson.RootElement.TryGetProperty("momentos", out var momentArray) ||
+            momentArray.ValueKind != JsonValueKind.Array)
+            return ([], "La IA no devolvió una lista válida de momentos destacados.");
 
         var candidatesList = new List<ClipMoment>();
         foreach (var item in momentArray.EnumerateArray())
         {
-            if (!item.TryGetProperty("inicio", out var startValue) || !startValue.TryGetDouble(out double start)) continue;
-            if (!item.TryGetProperty("fin", out var endValue) || !endValue.TryGetDouble(out double end)) continue;
-            if (end <= start || end - start < clipDuration - 1.5 || end - start > clipDuration + 3) continue;
-            start = Math.Clamp(start, 0, Math.Max(0, videoDuration - clipDuration));
-            string category = item.TryGetProperty("categoria", out var categoryValue) ? categoryValue.GetString() ?? "destacado" : "destacado";
-            string reason = item.TryGetProperty("motivo", out var reasonValue) ? reasonValue.GetString() ?? "Momento destacado" : "Momento destacado";
-            int score = item.TryGetProperty("potencial", out var scoreValue) && scoreValue.TryGetInt32(out int parsedScore) ? Math.Clamp(parsedScore, 1, 100) : 70;
+            if (!item.TryGetProperty("inicio", out var startValue) ||
+                !startValue.TryGetDouble(out double start))
+                continue;
+
+            if (!double.IsFinite(start) || start < 0 || start + clipDuration > videoDuration)
+                continue;
+
+            string category = item.TryGetProperty("categoria", out var categoryValue)
+                ? categoryValue.GetString() ?? "destacado"
+                : "destacado";
+            string reason = item.TryGetProperty("motivo", out var reasonValue)
+                ? reasonValue.GetString() ?? "Momento destacado"
+                : "Momento destacado";
+            int score = item.TryGetProperty("potencial", out var scoreValue) &&
+                        scoreValue.TryGetInt32(out int parsedScore)
+                ? Math.Clamp(parsedScore, 1, 100)
+                : 70;
+
             candidatesList.Add(new ClipMoment(start, start + clipDuration, category, reason, score));
         }
 
         var accepted = new List<ClipMoment>();
         foreach (var candidate in candidatesList.OrderByDescending(m => m.Potential))
         {
-            if (accepted.Any(existing => Math.Abs(existing.Start - candidate.Start) < clipDuration * 0.85)) continue;
+            if (accepted.Any(existing => Math.Abs(existing.Start - candidate.Start) < clipDuration * 0.85))
+                continue;
             accepted.Add(candidate);
             if (accepted.Count >= desiredCount) break;
         }
+
         return (accepted.OrderBy(m => m.Start).ToList(), null);
     }
     catch (TaskCanceledException)
@@ -1052,30 +1281,8 @@ static async Task<(List<ClipMoment> Moments, string? Error)> DetectHighlightMome
     }
     finally
     {
-        if (!string.IsNullOrWhiteSpace(uploadedFileName))
-        {
-            try
-            {
-                using var deleteClient = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-                using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, "https://generativelanguage.googleapis.com/v1beta/" + uploadedFileName);
-                deleteRequest.Headers.Add("x-goog-api-key", apiKey);
-                using var deleteResponse = await deleteClient.SendAsync(deleteRequest);
-            }
-            catch { }
-        }
+        try { if (Directory.Exists(audioDirectory)) Directory.Delete(audioDirectory, true); } catch { }
     }
-}
-
-static string ExtractGeminiError(string body, int httpStatus)
-{
-    try
-    {
-        using var doc = JsonDocument.Parse(body);
-        if (doc.RootElement.TryGetProperty("error", out var error) && error.TryGetProperty("message", out var message))
-            return message.GetString() ?? $"HTTP {httpStatus}";
-    }
-    catch { }
-    return $"HTTP {httpStatus}";
 }
 
 app.MapPost("/generar", async (Solicitud solicitud) =>
@@ -1085,90 +1292,122 @@ app.MapPost("/generar", async (Solicitud solicitud) =>
         if (string.IsNullOrWhiteSpace(solicitud.Tema))
             return Results.BadRequest(new { error = "Escribe un tema." });
 
-        string? apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            return Results.Problem(detail: "Falta configurar la clave de Gemini.", statusCode: 500);
-
         string instrucciones = solicitud.Tipo switch
         {
             "Prompt para imagen" =>
-                "Actúa como director de arte y creador de prompts. Redacta un prompt visual detallado y listo para usar en un generador de imágenes. Describe sujeto, escenario, composición, iluminación, paleta de colores, estilo, perspectiva, calidad y formato. Respeta exactamente cualquier texto que el usuario quiera incluir. Responde en español.",
+                "ActÃºa como director de arte y creador de prompts. Redacta un prompt visual detallado y listo para usar en un generador de imÃ¡genes. Describe sujeto, escenario, composiciÃ³n, iluminaciÃ³n, paleta de colores, estilo, perspectiva, calidad y formato. Respeta exactamente cualquier texto que el usuario quiera incluir. Responde en espaÃ±ol.",
             "Buscador IA" =>
-                "Actúa como el asistente de MARY. Responde en español con claridad, orden y utilidad. Si la pregunta pide datos actuales o noticias, aclara que esta versión no consulta Internet en tiempo real. No inventes búsquedas web, fuentes, enlaces ni hechos. Distingue hechos de recomendaciones y reconoce incertidumbre.",
+                "ActÃºa como el asistente de MARY. Responde en espaÃ±ol con claridad, orden y utilidad. Si la pregunta pide datos actuales o noticias, aclara que esta versiÃ³n no consulta Internet en tiempo real. No inventes bÃºsquedas web, fuentes, enlaces ni hechos. Distingue hechos de recomendaciones y reconoce incertidumbre.",
             "Crear prompts" =>
-                "Actúa como especialista en ingeniería de prompts. Crea o mejora un prompt claro, específico y reutilizable para la herramienta de IA que indique el usuario. Incluye objetivo, contexto, instrucciones, estilo, formato y restricciones necesarias. Si falta el nombre de la herramienta, crea un prompt adaptable. Responde en español.",
+                "ActÃºa como especialista en ingenierÃ­a de prompts. Crea o mejora un prompt claro, especÃ­fico y reutilizable para la herramienta de IA que indique el usuario. Incluye objetivo, contexto, instrucciones, estilo, formato y restricciones necesarias. Si falta el nombre de la herramienta, crea un prompt adaptable. Responde en espaÃ±ol.",
             "Guion de video con audio" =>
-                "Actúa como productor audiovisual. Crea un plan de video en español con título, gancho inicial, escenas con duración, descripción visual de cada escena, narración exacta para voz en off, texto en pantalla, sugerencias de música y efectos de sonido, y cierre. Adapta la estructura a la duración y formato que indique el usuario. No afirmes que has renderizado ni creado un archivo MP4 o audio; entrega el guion y las instrucciones de producción.",
-            "Reflexión motivacional" =>
-                "Escribe una reflexión original en español sobre el tema indicado. Hazla emotiva, natural y fácil de narrar. Incluye un comienzo que atrape, una idea central y un cierre memorable. Respeta la duración solicitada.",
+                "ActÃºa como productor audiovisual. Crea un plan de video en espaÃ±ol con tÃ­tulo, gancho inicial, escenas con duraciÃ³n, descripciÃ³n visual de cada escena, narraciÃ³n exacta para voz en off, texto en pantalla, sugerencias de mÃºsica y efectos de sonido, y cierre. Adapta la estructura a la duraciÃ³n y formato que indique el usuario. No afirmes que has renderizado ni creado un archivo MP4 o audio; entrega el guion y las instrucciones de producciÃ³n.",
+            "ReflexiÃ³n motivacional" =>
+                "Escribe una reflexiÃ³n original en espaÃ±ol sobre el tema indicado. Hazla emotiva, natural y fÃ¡cil de narrar. Incluye un comienzo que atrape, una idea central y un cierre memorable. Respeta la duraciÃ³n solicitada.",
             "Podcast" =>
-                "Crea un guion de podcast en español con título, gancho inicial, presentación, desarrollo con ideas claras, transiciones y cierre. Usa un tono conversacional y respeta la duración solicitada.",
+                "Crea un guion de podcast en espaÃ±ol con tÃ­tulo, gancho inicial, presentaciÃ³n, desarrollo con ideas claras, transiciones y cierre. Usa un tono conversacional y respeta la duraciÃ³n solicitada.",
             "Historia o frutinovela" =>
-                "Crea una historia original en español con personajes definidos, conflicto, diálogos naturales, tensión, escenas visuales y un final sorprendente o emotivo. Divide en escenas si ayuda al formato solicitado.",
+                "Crea una historia original en espaÃ±ol con personajes definidos, conflicto, diÃ¡logos naturales, tensiÃ³n, escenas visuales y un final sorprendente o emotivo. Divide en escenas si ayuda al formato solicitado.",
             "Guion para TikTok y Facebook" =>
-                "Crea un guion para TikTok y Facebook en español. Incluye un gancho fuerte para los primeros segundos, escenas breves, narración, texto en pantalla y un cierre que invite de forma natural a comentar o seguir la página. Adapta la duración indicada.",
+                "Crea un guion para TikTok y Facebook en espaÃ±ol. Incluye un gancho fuerte para los primeros segundos, escenas breves, narraciÃ³n, texto en pantalla y un cierre que invite de forma natural a comentar o seguir la pÃ¡gina. Adapta la duraciÃ³n indicada.",
             _ => "Tipo de solicitud no disponible. Elige una herramienta del Buscador IA."
         };
 
         string prompt = instrucciones + "\n\nTema del usuario: " + solicitud.Tema +
-                        "\n\nResponde solamente con el contenido solicitado en español.";
+                        "\n\nResponde solamente con el contenido solicitado en espaÃ±ol.";
 
-        var cuerpo = new
+        string? groqKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
+        string? openRouterKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+
+        using var cliente = new HttpClient { Timeout = TimeSpan.FromSeconds(75) };
+
+        async Task<(string? texto, string error)> ConsultarProveedor(
+            string url, string clave, string modelo)
         {
-            contents = new[]
-            {
-                new { parts = new[] { new { text = prompt } } }
-            }
-        };
-
-        using var cliente = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
-        using var peticion = new HttpRequestMessage(
-            HttpMethod.Post,
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent");
-        peticion.Headers.Add("x-goog-api-key", apiKey);
-        peticion.Content = new StringContent(JsonSerializer.Serialize(cuerpo), Encoding.UTF8, "application/json");
-
-        Console.WriteLine("Gemini está generando contenido para MARY...");
-        using var respuesta = await cliente.SendAsync(peticion);
-        string contenido = await respuesta.Content.ReadAsStringAsync();
-
-        if (!respuesta.IsSuccessStatusCode)
-        {
-            string detalleProveedor = $"HTTP {(int)respuesta.StatusCode} {respuesta.StatusCode}";
             try
             {
-                using var errorDoc = JsonDocument.Parse(contenido);
-                if (errorDoc.RootElement.TryGetProperty("error", out var errorObj) &&
-                    errorObj.TryGetProperty("message", out var mensajeObj))
+                var cuerpo = new
                 {
-                    string? mensaje = mensajeObj.GetString();
-                    if (!string.IsNullOrWhiteSpace(mensaje))
-                        detalleProveedor = mensaje;
-                }
-            }
-            catch
-            {
-                // Mantener el código HTTP si Google no devolvió JSON válido.
-            }
+                    model = modelo,
+                    messages = new[]
+                    {
+                        new { role = "system", content = "Eres MARY, una asistente Ãºtil que responde en espaÃ±ol." },
+                        new { role = "user", content = prompt }
+                    },
+                    temperature = 0.7
+                };
 
-            Console.WriteLine("Error de Gemini: " + detalleProveedor);
-            return Results.Problem(
-                detail: "Gemini rechazó la solicitud: " + detalleProveedor,
-                statusCode: 502);
+                using var peticion = new HttpRequestMessage(HttpMethod.Post, url);
+                peticion.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", clave);
+                peticion.Content = new StringContent(
+                    JsonSerializer.Serialize(cuerpo), Encoding.UTF8, "application/json");
+
+                using var respuesta = await cliente.SendAsync(peticion);
+                string contenido = await respuesta.Content.ReadAsStringAsync();
+
+                if (!respuesta.IsSuccessStatusCode)
+                    return (null, $"HTTP {(int)respuesta.StatusCode}: {contenido}");
+
+                using var documento = JsonDocument.Parse(contenido);
+
+                if (!documento.RootElement.TryGetProperty("choices", out var choices) ||
+                    choices.GetArrayLength() == 0 ||
+                    !choices[0].TryGetProperty("message", out var message) ||
+                    !message.TryGetProperty("content", out var content))
+                    return (null, "El proveedor no devolviÃ³ contenido vÃ¡lido.");
+
+                string? texto = content.GetString();
+
+                return !string.IsNullOrWhiteSpace(texto)
+                    ? (texto, "")
+                    : (null, "El proveedor devolviÃ³ una respuesta vacÃ­a.");
+            }
+            catch (Exception ex)
+            {
+                return (null, ex.Message);
+            }
         }
 
-        using var documento = JsonDocument.Parse(contenido);
-        if (!documento.RootElement.TryGetProperty("candidates", out var candidatos) || candidatos.GetArrayLength() == 0)
-            return Results.Problem(detail: "Gemini no devolvió contenido.", statusCode: 502);
+        if (!string.IsNullOrWhiteSpace(groqKey))
+        {
+            Console.WriteLine("MARY: intentando generar con Groq...");
+            var groq = await ConsultarProveedor(
+                "https://api.groq.com/openai/v1/chat/completions",
+                groqKey,
+                "openai/gpt-oss-20b");
 
-        string texto = candidatos[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString()
-                       ?? "Gemini no devolvió texto.";
-        Console.WriteLine("Contenido generado correctamente.");
-        return Results.Ok(new { texto });
+            if (groq.texto != null)
+            {
+                Console.WriteLine("MARY: contenido generado con Groq.");
+                return Results.Ok(new { texto = groq.texto, proveedor = "Groq" });
+            }
+
+            Console.WriteLine("Groq no disponible; intentando respaldo gratuito.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(openRouterKey))
+        {
+            Console.WriteLine("MARY: intentando generar con OpenRouter gratuito...");
+            var respaldo = await ConsultarProveedor(
+                "https://openrouter.ai/api/v1/chat/completions",
+                openRouterKey,
+                "openrouter/free");
+
+            if (respaldo.texto != null)
+            {
+                Console.WriteLine("MARY: contenido generado con OpenRouter.");
+                return Results.Ok(new { texto = respaldo.texto, proveedor = "OpenRouter gratuito" });
+            }
+        }
+
+        return Results.Problem(
+            detail: "MARY no pudo generar el contenido. Revisa las claves y los lÃ­mites gratuitos de Groq y OpenRouter.",
+            statusCode: 502);
     }
     catch (TaskCanceledException)
     {
-        return Results.Problem(detail: "La solicitud tardó demasiado. Inténtalo de nuevo.", statusCode: 504);
+        return Results.Problem(detail: "La solicitud tardÃ³ demasiado. IntÃ©ntalo de nuevo.", statusCode: 504);
     }
     catch (Exception ex)
     {
@@ -1269,6 +1508,7 @@ static bool IsPublicInternetAddress(IPAddress address)
         if (b[0] == 0x20 && b[1] == 0x01 && b[2] == 0x0D && b[3] == 0xB8) return false;
         return true;
     }
+
     return false;
 }
 

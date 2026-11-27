@@ -4,3 +4,9 @@ obj/
 *.user
 appsettings.json
 appsettings.Development.json
+Program-*.txt
+Dockerfile-antes-*.txt
+Integrar*.ps1
+CambiarGenerar.ps1
+App_Data/
+dotnet/
